@@ -1,0 +1,44 @@
+# Phase 1 stack: Postgres + the FastAPI app.
+# Caddy (TLS reverse proxy) is added in Phase 6 for the public deployment.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: reservations
+    ports:
+      # Host 5433 -> container 5432. Deliberately NOT 5432: this machine already
+      # runs a local Postgres on 5432, and localhost:5432 would ambiguously
+      # resolve to that one. Host tooling/tests use localhost:5433; other
+      # containers still reach this DB as "db:5432".
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      args:
+        INSTALL_DEV: "true"     # tests run inside this image
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/reservations
+      CORS_ORIGINS: http://localhost:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/code               # live code reload during dev
+      - ./recordings:/code/recordings
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  pgdata:

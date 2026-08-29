@@ -1,0 +1,15 @@
+# --- Web framework / server ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# --- Database ---
+sqlmodel==0.0.22          # SQLModel = SQLAlchemy 2.x + Pydantic models
+psycopg[binary]==3.2.10   # Postgres driver (psycopg v3)
+alembic==1.14.0           # schema migrations
+
+# --- Config ---
+pydantic-settings==2.7.0  # load settings from environment / .env
+
+# --- Domain helpers ---
+python-dateutil==2.9.0.post0   # robust date math
+dateparser==1.2.0              # parse "next Friday", "tonight" -> datetime
