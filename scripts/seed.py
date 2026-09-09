@@ -17,8 +17,10 @@ from app.db import engine
 from app.reservations import service
 
 
-def _next_weekday(from_date, weekday: int):
-    d = from_date
+def _upcoming_weekday(weekday: int, min_days_ahead: int = 2):
+    """The next date landing on `weekday` (Mon=0) that is at least
+    `min_days_ahead` days from today — so seeded bookings are never in the past."""
+    d = datetime.now().date() + timedelta(days=min_days_ahead)
     while d.weekday() != weekday:
         d += timedelta(days=1)
     return d
@@ -29,9 +31,8 @@ def run() -> None:
         session.exec(text("TRUNCATE reservations, calls RESTART IDENTITY CASCADE"))
         session.commit()
 
-        today = datetime.now().date()
-        fri = _next_weekday(today, 4)
-        sat = _next_weekday(today, 5)
+        fri = _upcoming_weekday(4)
+        sat = _upcoming_weekday(5)
 
         samples = [
             # (name, phone, party, date, hour, minute, source, notes)

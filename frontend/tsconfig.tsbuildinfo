@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/hooks.ts","./src/main.tsx","./src/vite-env.d.ts","./src/components/availabilitybadge.tsx","./src/components/daytimeline.tsx","./src/components/newreservationform.tsx","./src/components/reservationslist.tsx","./src/components/statuspill.tsx","./src/lib/time.ts"],"version":"5.9.3"}

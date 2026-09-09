@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* App-wide defaults. Tailwind v4 reads theme customizations from @theme blocks;
+   we keep the stock palette and just set a page background + font. */
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
