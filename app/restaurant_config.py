@@ -86,8 +86,8 @@ _WEEKEND = [( _t("16:00"), _t("23:00") )]
 CONFIG = RestaurantConfig(
     name="The Copper Fork",
     timezone="America/New_York",
-    phone="+1-555-0142",
-    address="128 Mill Street, Anytown",
+    phone="(212) 555-0142",
+    address="128 Mill Street, New York, NY",
     turn_time=timedelta(minutes=90),
     slot_granularity=timedelta(minutes=15),
     max_party_size=8,

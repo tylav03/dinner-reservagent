@@ -20,10 +20,12 @@ export function useConfig() {
 }
 
 /**
- * Poll the reservation list on an interval so a booking made by phone (or in
- * another tab) shows up here within `intervalMs`.
+ * Poll one day's reservations on an interval, so a booking made by phone (or in
+ * another tab) for that day shows up here within `intervalMs`.
+ *
+ * @param day  "YYYY-MM-DD" — refetches immediately when it changes.
  */
-export function useReservations(intervalMs = 3000) {
+export function useReservations(day: string, intervalMs = 3000) {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function useReservations(intervalMs = 3000) {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await api.listReservations();
+      const data = await api.listReservations({ day });
       setReservations(data);
       setError(null);
       setLastUpdated(new Date());
@@ -41,7 +43,7 @@ export function useReservations(intervalMs = 3000) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [day]);
 
   useEffect(() => {
     refresh();
