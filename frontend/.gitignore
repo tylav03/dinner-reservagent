@@ -3,3 +3,6 @@ dist/
 .vercel/
 *.local
 .env
+
+# tsc -b's incremental-build cache — regenerated every build, pure noise in git
+*.tsbuildinfo
