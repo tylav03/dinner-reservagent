@@ -19,13 +19,15 @@ from app.reservations.schemas import (
     AlternativeSlot,
     AvailabilityOut,
     CreateReservationIn,
+    DayAvailabilityOut,
+    DaySlotOut,
     HoursWindowOut,
     PatchReservationIn,
     ReservationOut,
     RestaurantConfigOut,
     TableOut,
 )
-from app.restaurant_config import CONFIG
+from app.restaurant_config import CONFIG, now_local
 
 router = APIRouter(prefix="/api", tags=["reservations"])
 
@@ -82,6 +84,31 @@ def get_availability(
     return _availability_payload(res)
 
 
+@router.get("/availability/day", response_model=DayAvailabilityOut)
+def get_day_availability(
+    date_: date = Query(..., alias="date"),
+    party_size: int = Query(..., ge=1, le=50),
+    session: Session = Depends(get_session),
+) -> DayAvailabilityOut:
+    """Per-slot openings for one day — powers the reservation form's openings strip."""
+    day = service.day_availability(session, date_, party_size)
+    return DayAvailabilityOut(
+        date=day.date,
+        party_size=day.party_size,
+        slot_minutes=int(CONFIG.slot_granularity.total_seconds() // 60),
+        windows=[
+            HoursWindowOut(open=o.strftime("%H:%M"), close=c.strftime("%H:%M"))
+            for o, c in day.windows
+        ],
+        reason=day.reason,
+        next_open_date=day.next_open_date,
+        slots=[
+            DaySlotOut(time=s.time, free_tables=s.free_tables, bookable=s.bookable)
+            for s in day.slots
+        ],
+    )
+
+
 @router.get("/reservations", response_model=list[ReservationOut])
 def list_reservations(
     day: date | None = Query(None),
@@ -104,7 +131,7 @@ def create_reservation(
             phone=body.phone,
             party_size=body.party_size,
             when=_parse_when(body.when),
-            source="api",
+            source=body.source,
             notes=body.notes,
             idempotency_key=body.idempotency_key,
         )
@@ -140,7 +167,7 @@ def patch_reservation(
         r.status = body.status
     if body.notes is not None:
         r.notes = body.notes
-    r.updated_at = datetime.now()
+    r.updated_at = now_local()
     session.add(r)
     session.commit()
     session.refresh(r)

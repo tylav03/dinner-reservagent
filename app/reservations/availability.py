@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 
 import dateparser
 
-from app.restaurant_config import CONFIG, RestaurantConfig
+from app.restaurant_config import CONFIG, RestaurantConfig, now_local
 
 # Reasons an availability check can fail. Kept as string constants so they can be
 # returned to the voice agent and asserted on in tests.
@@ -98,7 +98,7 @@ def resolve_when(text_or_iso: str, *, now: datetime | None = None,
     in the voice layer: the LLM is told today's date and asked to pass a
     structured ISO datetime, with this function as a fallback only.
     """
-    now = now or datetime.now()
+    now = now or now_local(config)
     cleaned = text_or_iso.strip()
     low = cleaned.lower()
     for prefix in ("next ", "this ", "coming "):
@@ -149,6 +149,21 @@ def assign_table(when: datetime, party_size: int, existing: list[Booking],
     return None
 
 
+def free_tables_at(when: datetime, party_size: int, existing: list[Booking],
+                   config: RestaurantConfig = CONFIG) -> int:
+    """How many tables that can seat `party_size` are free for the full turn
+    starting at `when`. Powers the per-slot counts in the openings strip."""
+    end = when + config.turn_time
+    taken = {
+        b.table_id for b in existing
+        if intervals_overlap(when, end, b.start, b.end)
+    }
+    return sum(
+        1 for t in config.tables
+        if t.capacity >= party_size and t.id not in taken
+    )
+
+
 def nearest_alternatives(when: datetime, party_size: int, existing: list[Booking],
                          config: RestaurantConfig = CONFIG,
                          limit: int = 3) -> list[datetime]:
@@ -194,7 +209,7 @@ def check_availability(when: datetime, party_size: int, existing: list[Booking],
     `existing` is every currently-booked reservation (any table, any time). The
     engine filters it down to the relevant window itself.
     """
-    now = now or datetime.now()
+    now = now or now_local(config)
     when = snap_to_slot(when, config.slot_granularity)
     result = AvailabilityResult(available=False, requested=when, party_size=party_size)
 

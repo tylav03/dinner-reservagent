@@ -37,6 +37,14 @@ export function formatDateTime(iso: string): string {
   return `${formatDate(iso)} · ${formatTime(iso)}`;
 }
 
+/** Format a bare "HH:MM" clock string as "7:00 PM". */
+export function formatClock(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const am = h < 12;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${am ? "AM" : "PM"}`;
+}
+
 /** Minutes from midnight for the time part of an ISO string. */
 export function minutesOfDay(iso: string): number {
   const { h, mi } = parts(iso);
@@ -60,6 +68,25 @@ export function isoDateOffset(offsetDays = 0): string {
 
 export function todayIsoDate(): string {
   return isoDateOffset(0);
+}
+
+/** Current local wall-clock time as "YYYY-MM-DDTHH:MM:SS" — comparable as a
+ *  string against the backend's naive-local `start_at` / `end_at`. */
+export function nowLocalIso(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  );
+}
+
+/** "2026-09-09" + n days -> "YYYY-MM-DD". Handles month/year rollover. */
+export function addDaysToIsoDate(isoDate: string, n: number): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  const p = (x: number) => String(x).padStart(2, "0");
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
 }
 
 /** JS weekday (0=Sun) -> backend key ("mon".."sun"). */

@@ -96,3 +96,28 @@ def test_past_time_rejected(session):
         service.create_reservation(session, guest_name="x", phone="1",
                                    party_size=2, when=past)
     assert ei.value.result.reason == "past"
+
+
+def test_day_availability_reports_openings(session):
+    friday = _friday_7pm().date()
+    day = service.day_availability(session, friday, 2)
+    assert day.reason is None
+    assert day.slots[0].time == "17:00"
+    assert day.slots[0].free_tables == 14
+    assert all(s.bookable for s in day.slots)  # nothing booked yet
+
+
+def test_day_availability_full_night_points_to_next_open_date(session):
+    friday = _friday_7pm().date()
+    six_tops = [t.id for t in CONFIG.tables if t.capacity == 6]  # T11–T14
+    # Fill every six-top for the whole service with back-to-back 90-min turns.
+    for tid in six_tops:
+        for start_h, start_m in [(17, 0), (18, 30), (20, 0), (21, 30)]:
+            service.create_reservation(
+                session, guest_name=f"{tid}-{start_h}", phone=tid,
+                party_size=6, when=datetime.combine(friday, datetime.min.time())
+                .replace(hour=start_h, minute=start_m),
+            )
+    day = service.day_availability(session, friday, 6)
+    assert day.reason == "full"
+    assert day.next_open_date is not None and day.next_open_date > friday

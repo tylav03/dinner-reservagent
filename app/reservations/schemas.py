@@ -6,7 +6,9 @@ the table layout.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +23,10 @@ class CreateReservationIn(BaseModel):
     when: str
     notes: str | None = Field(default=None, max_length=500)
     idempotency_key: str | None = Field(default=None, max_length=120)
+    # Who made the booking. Defaults to "manual" (a person using a dashboard).
+    # The voice agent calls the service layer directly with source="voice";
+    # external integrations can pass "api".
+    source: Literal["manual", "api", "voice"] = "manual"
 
 
 class PatchReservationIn(BaseModel):
@@ -62,6 +68,22 @@ class AvailabilityOut(BaseModel):
 class HoursWindowOut(BaseModel):
     open: str
     close: str
+
+
+class DaySlotOut(BaseModel):
+    time: str            # "HH:MM"
+    free_tables: int
+    bookable: bool
+
+
+class DayAvailabilityOut(BaseModel):
+    date: date
+    party_size: int
+    slot_minutes: int
+    windows: list[HoursWindowOut]           # [] when closed
+    reason: str | None = None              # None when the day has openings
+    next_open_date: date | None = None
+    slots: list[DaySlotOut]
 
 
 class TableOut(BaseModel):
