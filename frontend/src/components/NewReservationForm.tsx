@@ -1,86 +1,99 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  api,
-  ConflictError,
-  type Availability,
-  type RestaurantConfig,
-} from "../api";
-import { combineDateTimeToIso, isoDateOffset } from "../lib/time";
-import { AvailabilityBadge } from "./AvailabilityBadge";
+import { useState } from "react";
+import { api, ConflictError, type RestaurantConfig } from "../api";
+import { useDayAvailability } from "../hooks";
+import { combineDateTimeToIso } from "../lib/time";
+import { formatPhoneInput } from "../lib/phone";
+import { OpeningsStrip } from "./OpeningsStrip";
 
 interface Props {
   config: RestaurantConfig;
   onCreated: () => void; // tell the parent to refresh the list
+  onBooked: (confirmationCode: string) => void; // show the toast, app-level
 }
 
 const FIELD_BASE =
   "rounded-md border border-slate-300 py-2 text-sm focus:border-slate-500 focus:outline-none";
-const FIELD = `${FIELD_BASE} w-full px-3`; // full-width text inputs
-const FIELD_COMPACT = `${FIELD_BASE} w-full px-2`; // date / time — less side padding for the native icon
+const FIELD = `${FIELD_BASE} w-full px-3`;
+const FIELD_COMPACT = `${FIELD_BASE} w-full px-2`; // date / time — less padding for the native icon
 
-export function NewReservationForm({ config, onCreated }: Props) {
+export function NewReservationForm({ config, onCreated, onBooked }: Props) {
   const [guestName, setGuestName] = useState("");
   const [phone, setPhone] = useState("");
   const [partySize, setPartySize] = useState(2);
-  const [date, setDate] = useState(isoDateOffset(1)); // default to tomorrow
-  const [time, setTime] = useState("19:00");
+  // Date and time start blank — nothing is auto-picked. Filling either one is
+  // what reveals the openings strip below.
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
   const [notes, setNotes] = useState("");
 
-  const [availability, setAvailability] = useState<Availability | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [justBooked, setJustBooked] = useState<string | null>(null);
 
-  // The availability check is only meaningful once the user has expressed intent
-  // about *when* / *how many*. Until then the form is pristine and we show no
-  // banner (a banner implies something happened).
-  const [slotTouched, setSlotTouched] = useState(false);
-  const markSlotTouched = () => setSlotTouched(true);
+  const [reloadKey, setReloadKey] = useState(0); // bump to refetch the strip
+  // The hook itself no-ops while `date` is empty, so the strip only ever
+  // queries once the host has actually picked a day.
+  const { day, loading: dayLoading } = useDayAvailability(date, partySize, reloadKey);
 
-  const whenIso = combineDateTimeToIso(date, time);
+  // A successful booking is announced via a toast (see App.tsx) — it lives on
+  // its own timer, not on this form's state, so it can't get stuck once the
+  // form moves on. This only needs to clear an in-progress *error*.
+  const dismissError = () => setSubmitError(null);
 
-  // Debounced live availability check — skipped entirely until a when/party field
-  // has been touched.
-  const debounce = useRef<number | null>(null);
-  useEffect(() => {
-    if (!slotTouched) return;
-    if (debounce.current) window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(() => {
-      api
-        .getAvailability(whenIso, partySize)
-        .then(setAvailability)
-        .catch(() => setAvailability(null));
-    }, 400);
-    return () => {
-      if (debounce.current) window.clearTimeout(debounce.current);
-    };
-  }, [whenIso, partySize, slotTouched]);
+  const editName = (v: string) => {
+    setGuestName(v);
+    dismissError();
+  };
+  const editPhone = (v: string) => {
+    setPhone(formatPhoneInput(v));
+    dismissError();
+  };
+  const editNotes = (v: string) => {
+    setNotes(v);
+    dismissError();
+  };
+  const editParty = (v: number) => {
+    setPartySize(v);
+    dismissError();
+  };
+  const editDate = (v: string) => {
+    setDate(v);
+    dismissError();
+  };
+  const editTime = (v: string) => {
+    setTime(v);
+    dismissError();
+  };
+
+  const missingSlot = date === "" || time === "";
+  const selectedSlot = day?.slots.find((s) => s.time === time) ?? null;
+  const slotBlocked =
+    missingSlot ||
+    (day != null && (day.reason != null || selectedSlot == null || !selectedSlot.bookable));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting || slotBlocked) return; // guards a stray Enter-key submit
     setSubmitting(true);
-    setSubmitError(null);
-    setJustBooked(null);
+    dismissError();
     try {
       const r = await api.createReservation({
         guest_name: guestName,
         phone,
         party_size: partySize,
-        when: whenIso,
+        when: combineDateTimeToIso(date, time),
         notes: notes || null,
+        source: "manual",
       });
-      setJustBooked(r.confirmation_code);
+      onBooked(r.confirmation_code);
       setGuestName("");
       setPhone("");
       setNotes("");
-      setAvailability(null); // clear the pre-booking check; the success banner stands alone
-      setSlotTouched(false);
+      setReloadKey((k) => k + 1); // the slot just lost a table — refresh the strip
       onCreated();
     } catch (err) {
       if (err instanceof ConflictError) {
-        setSlotTouched(true);
-        setAvailability(err.detail); // show reason + alternatives
-        setSubmitError("That slot isn't available — see below.");
+        setSubmitError("That opening was just taken — pick another slot.");
+        setReloadKey((k) => k + 1);
       } else {
         setSubmitError(String(err));
       }
@@ -89,7 +102,13 @@ export function NewReservationForm({ config, onCreated }: Props) {
     }
   }
 
-  const canSubmit = guestName.trim() && phone.trim() && partySize > 0 && !submitting;
+  const canSubmit =
+    guestName.trim() !== "" && phone.trim() !== "" && !submitting && !slotBlocked;
+
+  // The button always reads "Create reservation" (or "Booking…" mid-submit) —
+  // *why* it's disabled is explained by the openings strip / field state above
+  // it, not by relabeling the button itself.
+  const buttonLabel = submitting ? "Booking…" : "Create reservation";
 
   return (
     <form onSubmit={submit} className="space-y-3">
@@ -98,7 +117,7 @@ export function NewReservationForm({ config, onCreated }: Props) {
         <input
           className={FIELD}
           value={guestName}
-          onChange={(e) => setGuestName(e.target.value)}
+          onChange={(e) => editName(e.target.value)}
           placeholder="Jordan Rivera"
         />
       </div>
@@ -108,8 +127,10 @@ export function NewReservationForm({ config, onCreated }: Props) {
         <input
           className={FIELD}
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => editPhone(e.target.value)}
           placeholder="(212) 555-0123"
+          inputMode="tel"
+          maxLength={14}
         />
       </div>
 
@@ -121,10 +142,7 @@ export function NewReservationForm({ config, onCreated }: Props) {
           max={config.max_party_size + 4}
           className={`${FIELD_BASE} w-24 px-3`}
           value={partySize}
-          onChange={(e) => {
-            setPartySize(Number(e.target.value));
-            markSlotTouched();
-          }}
+          onChange={(e) => editParty(Number(e.target.value))}
         />
       </div>
 
@@ -135,10 +153,7 @@ export function NewReservationForm({ config, onCreated }: Props) {
             type="date"
             className={FIELD_COMPACT}
             value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              markSlotTouched();
-            }}
+            onChange={(e) => editDate(e.target.value)}
           />
         </div>
         <div>
@@ -148,40 +163,41 @@ export function NewReservationForm({ config, onCreated }: Props) {
             step={config.slot_granularity_minutes * 60}
             className={FIELD_COMPACT}
             value={time}
-            onChange={(e) => {
-              setTime(e.target.value);
-              markSlotTouched();
-            }}
+            onChange={(e) => editTime(e.target.value)}
           />
         </div>
       </div>
+
+      {date !== "" && (
+        <div>
+          <div className="mb-1 text-xs font-medium text-slate-600">
+            Openings — party of {partySize}
+          </div>
+          <OpeningsStrip
+            day={day}
+            loading={dayLoading}
+            maxPartySize={config.max_party_size}
+            selectedTime={time}
+            onPick={(t) => editTime(t)}
+            onPickDate={(d) => editDate(d)}
+          />
+        </div>
+      )}
 
       <div>
         <label className="mb-1 block text-xs font-medium text-slate-600">Notes (optional)</label>
         <input
           className={FIELD}
           value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          onChange={(e) => editNotes(e.target.value)}
           placeholder="Window table, birthday…"
         />
       </div>
 
-      {slotTouched && (
-        <AvailabilityBadge
-          availability={availability}
-          onPickAlternative={(iso) => {
-            const [d, t] = iso.split("T");
-            setDate(d);
-            setTime(t.slice(0, 5));
-          }}
-        />
-      )}
-
-      {submitError && <div className="text-sm text-rose-700">{submitError}</div>}
-      {justBooked && (
-        <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          Booked — confirmation <strong>{justBooked}</strong>.
-        </div>
+      {/* Only an in-progress error lives here — success is a toast (App.tsx),
+          not form state, so it can't linger once you've moved on. */}
+      {submitError && (
+        <div className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{submitError}</div>
       )}
 
       <button
@@ -189,7 +205,7 @@ export function NewReservationForm({ config, onCreated }: Props) {
         disabled={!canSubmit}
         className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40"
       >
-        {submitting ? "Booking…" : "Create reservation"}
+        {buttonLabel}
       </button>
     </form>
   );

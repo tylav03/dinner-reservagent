@@ -22,11 +22,12 @@ from app.reservations.availability import (
     CannotResolveDateTime,
     assign_table,
     check_availability,
+    free_tables_at,
     intervals_overlap,
     resolve_when,
     snap_to_slot,
 )
-from app.restaurant_config import CONFIG, TableSpec
+from app.restaurant_config import CONFIG, TableSpec, now_local
 
 # A fixed "now" so tests are deterministic. It's a Wednesday.
 NOW = datetime(2026, 9, 2, 12, 0)
@@ -118,6 +119,25 @@ class TestAssignTable:
         assert assign_table(later, 2, existing) == "T1"
 
 
+class TestFreeTablesAt:
+    def test_counts_all_suitable_tables_when_empty(self):
+        when = datetime(2026, 9, 4, 19, 0)
+        assert free_tables_at(when, 2, []) == len(CONFIG.tables)  # every table seats 2
+        assert free_tables_at(when, 5, []) == sum(
+            1 for t in CONFIG.tables if t.capacity >= 5
+        )
+
+    def test_subtracts_overlapping_bookings(self):
+        when = datetime(2026, 9, 4, 19, 0)
+        existing = [booking("T1", when), booking("T2", when)]
+        assert free_tables_at(when, 2, existing) == len(CONFIG.tables) - 2
+
+    def test_ignores_non_overlapping_bookings(self):
+        when = datetime(2026, 9, 4, 19, 0)
+        existing = [booking("T1", datetime(2026, 9, 4, 17, 0))]  # ends 18:30
+        assert free_tables_at(when, 2, existing) == len(CONFIG.tables)
+
+
 # ---------------------------------------------------------------------------
 # check_availability
 # ---------------------------------------------------------------------------
@@ -176,12 +196,25 @@ class TestConfigDerivedHelpers:
         friday = datetime(2026, 9, 4).date()
         assert CONFIG.last_seating(friday).isoformat() == "21:30:00"
 
-    def test_closed_day_has_no_windows(self):
-        # config has all 7 days open; prove the mechanism with a patched copy
-        closed = replace(CONFIG, hours={**CONFIG.hours, 0: []})
-        assert closed.windows_for(datetime(2026, 9, 7).date()) == []  # a Monday
+    def test_monday_is_closed(self):
+        assert CONFIG.windows_for(datetime(2026, 9, 7).date()) == []  # a Monday
 
     def test_largest_table_capacity(self):
         assert CONFIG.largest_table_capacity() == 6
         bigger = replace(CONFIG, tables=[*CONFIG.tables, TableSpec("T99", 10)])
         assert bigger.largest_table_capacity() == 10
+
+
+class TestNowLocal:
+    """Regression: the process may run in UTC (Docker), but past/future
+    decisions must use the *restaurant's* wall clock, or same-day evening
+    bookings get wrongly rejected as 'past'."""
+
+    def test_now_local_is_naive_and_in_restaurant_offset(self):
+        from datetime import timezone
+
+        local = now_local()
+        assert local.tzinfo is None
+        utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        offset_hours = round((utc - local).total_seconds() / 3600)
+        assert offset_hours in (4, 5)  # America/New_York is UTC-4 (EDT) / UTC-5 (EST)

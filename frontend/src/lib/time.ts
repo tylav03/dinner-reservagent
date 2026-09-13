@@ -37,6 +37,14 @@ export function formatDateTime(iso: string): string {
   return `${formatDate(iso)} · ${formatTime(iso)}`;
 }
 
+/** Format a bare "HH:MM" clock string as "7:00 PM". */
+export function formatClock(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const am = h < 12;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${am ? "AM" : "PM"}`;
+}
+
 /** Minutes from midnight for the time part of an ISO string. */
 export function minutesOfDay(iso: string): number {
   const { h, mi } = parts(iso);

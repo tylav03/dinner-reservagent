@@ -9,10 +9,12 @@ export function ReservationsList({
   reservations,
   date,
   onChanged,
+  onCancelled,
 }: {
   reservations: Reservation[];
   date: string; // "YYYY-MM-DD" currently in view
   onChanged: () => void;
+  onCancelled: (confirmationCode: string) => void;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "when", dir: 1 });
   const [hideCancelled, setHideCancelled] = useState(true);
@@ -62,6 +64,7 @@ export function ReservationsList({
   async function cancel(code: string) {
     await api.cancelReservation(code);
     onChanged();
+    onCancelled(code);
   }
 
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "");

@@ -47,6 +47,22 @@ export interface Availability {
   alternatives: { when: string }[];
 }
 
+export interface DaySlot {
+  time: string; // "HH:MM"
+  free_tables: number;
+  bookable: boolean;
+}
+
+export interface DayAvailability {
+  date: string; // "YYYY-MM-DD"
+  party_size: number;
+  slot_minutes: number;
+  windows: { open: string; close: string }[]; // [] when closed
+  reason: AvailabilityReason | null; // null when the day has openings
+  next_open_date: string | null;
+  slots: DaySlot[];
+}
+
 export interface RestaurantConfig {
   name: string;
   timezone: string;
@@ -67,6 +83,7 @@ export interface CreateReservationBody {
   when: string; // ISO datetime or free text
   notes?: string | null;
   idempotency_key?: string | null;
+  source?: "manual" | "api" | "voice"; // defaults to "manual" server-side
 }
 
 // --- error type ---------------------------------------------------------
@@ -119,6 +136,11 @@ export const api = {
       party_size: String(partySize),
     });
     return request<Availability>(`/api/availability?${q}`);
+  },
+
+  getDayAvailability: (date: string, partySize: number) => {
+    const q = new URLSearchParams({ date, party_size: String(partySize) });
+    return request<DayAvailability>(`/api/availability/day?${q}`);
   },
 
   createReservation: (body: CreateReservationBody) =>

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useConfig, useReservations } from "./hooks";
 import { NewReservationForm } from "./components/NewReservationForm";
 import { ReservationsList } from "./components/ReservationsList";
 import { DayTimeline } from "./components/DayTimeline";
+import { Toast, type ToastMessage } from "./components/Toast";
 import { addDaysToIsoDate, formatDate, todayIsoDate } from "./lib/time";
 
 type Tab = "list" | "floor";
@@ -12,6 +13,17 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(todayIsoDate());
   const { reservations, loading, error, lastUpdated, refresh } = useReservations(selectedDate);
   const [tab, setTab] = useState<Tab>("list");
+
+  // App-level, not form/list state: a confirmation toast should outlive
+  // whatever triggered it and show no matter which tab is open. Both booking
+  // and cancelling report through this one function.
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
+  // Stable identity: the reservation list polls every 3s and re-renders App,
+  // and Toast's auto-dismiss timer resets whenever `onDismiss` changes — an
+  // inline arrow here would recreate it every poll and the toast would never
+  // survive long enough to time out.
+  const dismissToast = useCallback(() => setToast(null), []);
 
   const isToday = selectedDate === todayIsoDate();
 
@@ -46,7 +58,11 @@ export default function App() {
               New reservation
             </h2>
             {config ? (
-              <NewReservationForm config={config} onCreated={refresh} />
+              <NewReservationForm
+                config={config}
+                onCreated={refresh}
+                onBooked={(code) => showToast(`Booked — confirmation ${code}`)}
+              />
             ) : (
               <div className="text-sm text-slate-400">Loading…</div>
             )}
@@ -118,6 +134,7 @@ export default function App() {
               reservations={reservations}
               date={selectedDate}
               onChanged={refresh}
+              onCancelled={(code) => showToast(`Cancelled — confirmation ${code}`)}
             />
           )}
           {!loading && tab === "floor" && config && (
@@ -125,6 +142,8 @@ export default function App() {
           )}
         </main>
       </div>
+
+      <Toast message={toast} onDismiss={dismissToast} />
     </div>
   );
 }

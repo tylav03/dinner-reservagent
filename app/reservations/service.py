@@ -42,12 +42,17 @@ from app.models import (
     Reservation,
 )
 from app.reservations.availability import (
+    REASON_CLOSED,
+    REASON_FULL,
+    REASON_PARTY_TOO_LARGE,
+    REASON_PAST,
     AvailabilityResult,
     Booking,
     check_availability,
+    free_tables_at,
     snap_to_slot,
 )
-from app.restaurant_config import CONFIG, RestaurantConfig
+from app.restaurant_config import CONFIG, RestaurantConfig, now_local
 
 # Confirmation codes: 6 chars, no visually ambiguous glyphs (no I/O/0/1).
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -122,6 +127,102 @@ def bookings_on_day(session: Session, day: date, *,
     ]
 
 
+class DaySlot:
+    """One bookable slot on a day, for the openings strip."""
+
+    __slots__ = ("time", "free_tables", "bookable")
+
+    def __init__(self, time: str, free_tables: int, bookable: bool):
+        self.time = time
+        self.free_tables = free_tables
+        self.bookable = bookable
+
+
+class DayAvailability:
+    __slots__ = ("date", "party_size", "windows", "slots", "reason", "next_open_date")
+
+    def __init__(self, *, date, party_size, windows, slots, reason, next_open_date):
+        self.date = date
+        self.party_size = party_size
+        self.windows = windows                 # list[(open_time, close_time)]
+        self.slots = slots                     # list[DaySlot]
+        self.reason = reason                   # None | "closed"|"party_too_large"|"past"|"full"
+        self.next_open_date = next_open_date    # date | None
+
+
+def _day_slots(session: Session, d: date, party_size: int, now: datetime,
+               config: RestaurantConfig) -> tuple[list[DaySlot], bool, bool]:
+    """Per-slot free-table counts for one day. Returns (slots, any_bookable,
+    any_future)."""
+    windows = config.windows_for(d)
+    if not windows:
+        return [], False, False
+
+    day_bookings = bookings_on_day(session, d, config=config)
+    step = config.slot_granularity
+    open_dt = datetime.combine(d, min(o for o, _ in windows))
+    last_dt = datetime.combine(d, config.last_seating(d))
+
+    slots: list[DaySlot] = []
+    any_bookable = any_future = False
+    t = open_dt
+    while t <= last_dt:
+        free = free_tables_at(t, party_size, day_bookings, config)
+        is_future = t >= now
+        bookable = free > 0 and is_future
+        any_bookable |= bookable
+        any_future |= is_future
+        slots.append(DaySlot(t.strftime("%H:%M"), free, bookable))
+        t += step
+    return slots, any_bookable, any_future
+
+
+def _find_next_open_date(session: Session, start: date, party_size: int,
+                         now: datetime, config: RestaurantConfig,
+                         horizon_days: int = 14) -> date | None:
+    """The nearest date after `start` (within `horizon_days`) that has at least
+    one bookable slot for this party. Only called when `start` itself is a bust."""
+    if party_size > config.max_party_size:
+        return None
+    for i in range(1, horizon_days + 1):
+        d = start + timedelta(days=i)
+        _, any_bookable, _ = _day_slots(session, d, party_size, now, config)
+        if any_bookable:
+            return d
+    return None
+
+
+def day_availability(session: Session, d: date, party_size: int, *,
+                     now: datetime | None = None,
+                     config: RestaurantConfig = CONFIG) -> DayAvailability:
+    """Everything the openings strip needs for one day: the slot grid, and — if
+    the day is unusable — why, plus the next date that would work."""
+    now = now or now_local(config)
+    windows = config.windows_for(d)
+
+    if party_size > config.max_party_size:
+        reason = REASON_PARTY_TOO_LARGE
+        slots: list[DaySlot] = []
+    elif not windows:
+        reason = REASON_CLOSED
+        slots = []
+    else:
+        slots, any_bookable, any_future = _day_slots(session, d, party_size, now, config)
+        if any_bookable:
+            reason = None
+        else:
+            reason = REASON_PAST if not any_future else REASON_FULL
+
+    next_open = None
+    if reason in (REASON_CLOSED, REASON_FULL, REASON_PAST):
+        next_open = _find_next_open_date(session, d, party_size, now, config)
+
+    return DayAvailability(
+        date=d, party_size=party_size, windows=windows,
+        slots=slots, reason=reason, next_open_date=next_open,
+    )
+
+
 def get_by_code(session: Session, confirmation_code: str) -> Reservation:
     row = session.exec(
         select(Reservation).where(Reservation.confirmation_code == confirmation_code.upper())
@@ -147,7 +248,7 @@ def list_reservations(session: Session, *, day: date | None = None,
         stmt = stmt.where(Reservation.start_at >= start,
                           Reservation.start_at < start + timedelta(days=1))
     if upcoming_only:
-        stmt = stmt.where(Reservation.start_at >= datetime.now())
+        stmt = stmt.where(Reservation.start_at >= now_local())
     return list(session.exec(stmt.order_by(Reservation.start_at)).all())
 
 
@@ -245,7 +346,7 @@ def cancel_reservation(session: Session, confirmation_code: str) -> Reservation:
     row = get_by_code(session, confirmation_code)
     if row.status != STATUS_CANCELLED:
         row.status = STATUS_CANCELLED
-        row.updated_at = datetime.now()
+        row.updated_at = now_local()
         session.add(row)
         session.commit()
         session.refresh(row)

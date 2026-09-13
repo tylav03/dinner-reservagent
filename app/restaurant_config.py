@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 # Weekday index (Mon=0 .. Sun=6) -> list of (open, close) windows for that day.
 # A day with an empty list is a closed day.
@@ -93,7 +94,7 @@ CONFIG = RestaurantConfig(
     max_party_size=8,
     booking_horizon_days=60,
     hours={
-        0: _DINNER,        # Monday
+        0: [],             # Monday — closed
         1: _DINNER,        # Tuesday
         2: _DINNER,        # Wednesday
         3: _DINNER,        # Thursday
@@ -109,3 +110,14 @@ CONFIG = RestaurantConfig(
         TableSpec("T13", 6, section="patio"), TableSpec("T14", 6, section="patio"),
     ],
 )
+
+
+def now_local(config: RestaurantConfig = CONFIG) -> datetime:
+    """Current wall-clock time in the restaurant's timezone, as a *naive*
+    datetime — the whole app models booking times as naive local time.
+
+    Use this instead of `datetime.now()` for any past/future decision. The
+    process may run in UTC (e.g. a Docker container), so `datetime.now()` there
+    is not the restaurant's clock.
+    """
+    return datetime.now(ZoneInfo(config.timezone)).replace(tzinfo=None)

@@ -23,6 +23,8 @@ from datetime import datetime
 from sqlalchemy import Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
+from app.restaurant_config import now_local
+
 # --- reservation status ---------------------------------------------------
 STATUS_BOOKED = "booked"
 STATUS_SEATED = "seated"
@@ -48,7 +50,7 @@ def _uuid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now()
+    return now_local()
 
 
 class Reservation(SQLModel, table=True):

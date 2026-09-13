@@ -30,6 +30,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/reservations
       CORS_ORIGINS: http://localhost:5173
+      # App logic derives "now" in the restaurant's timezone regardless (see
+      # restaurant_config.now_local); this just keeps container logs sane.
+      TZ: America/New_York
     ports:
       - "8000:8000"
     volumes:
