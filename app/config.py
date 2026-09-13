@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # SQLAlchemy URL. psycopg v3 driver -> "postgresql+psycopg://".
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/reservations"
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5433/reservations"
 
     # Comma-separated list of origins allowed to call /api/* (the Vercel frontend).
     cors_origins: str = "http://localhost:5173"
