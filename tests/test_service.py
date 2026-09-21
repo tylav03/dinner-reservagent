@@ -109,9 +109,12 @@ def test_day_availability_reports_openings(session):
 
 def test_day_availability_full_night_points_to_next_open_date(session):
     friday = _friday_7pm().date()
-    six_tops = [t.id for t in CONFIG.tables if t.capacity == 6]  # T11–T14
-    # Fill every six-top for the whole service with back-to-back 90-min turns.
-    for tid in six_tops:
+    # Every table that could seat a party of 6 — T11-T14 (6- and 8-tops), not
+    # just capacity == 6, or an 8-top would sit empty and the night wouldn't
+    # actually be full.
+    tables_for_six = [t.id for t in CONFIG.tables if t.capacity >= 6]
+    # Fill every one of them for the whole service with back-to-back 90-min turns.
+    for tid in tables_for_six:
         for start_h, start_m in [(17, 0), (18, 30), (20, 0), (21, 30)]:
             service.create_reservation(
                 session, guest_name=f"{tid}-{start_h}", phone=tid,

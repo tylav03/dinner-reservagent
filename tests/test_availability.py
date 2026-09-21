@@ -189,6 +189,13 @@ class TestCheckAvailability:
         for alt in res.alternatives:
             assert assign_table(alt, 2, existing) is not None
 
+    def test_rejects_turn_that_crosses_midnight(self):
+        # Sat closes 23:00, 90m turn -> last seating 21:30. A 22:30 start ends
+        # 00:00 Sunday — an hour past close — and must be rejected, not
+        # accepted because a bare `00:00 <= 23:00` looks fine in isolation.
+        res = check_availability(datetime(2026, 9, 5, 22, 30), 2, existing=[], now=NOW)
+        assert not res.available and res.reason == REASON_CLOSED
+
 
 class TestConfigDerivedHelpers:
     def test_last_seating_accounts_for_turn_time(self):
@@ -200,7 +207,19 @@ class TestConfigDerivedHelpers:
         assert CONFIG.windows_for(datetime(2026, 9, 7).date()) == []  # a Monday
 
     def test_largest_table_capacity(self):
-        assert CONFIG.largest_table_capacity() == 6
+        # T12 seats 8 — max_party_size is 8, so a party at the cap must have
+        # somewhere to actually sit.
+        assert CONFIG.largest_table_capacity() == 8
+
+    def test_is_within_hours_at_the_midnight_boundary(self):
+        # Saturday: open 16:00, close 23:00, 90m turn -> last seating 21:30.
+        saturday = datetime(2026, 9, 5)
+        assert CONFIG.is_within_hours(saturday.replace(hour=21, minute=30)) is True
+        assert CONFIG.is_within_hours(saturday.replace(hour=22, minute=0)) is False
+        # These end *the next day* (22:30 -> 00:00, 22:45 -> 00:15); a bare
+        # time-of-day comparison would wrongly accept both.
+        assert CONFIG.is_within_hours(saturday.replace(hour=22, minute=30)) is False
+        assert CONFIG.is_within_hours(saturday.replace(hour=22, minute=45)) is False
         bigger = replace(CONFIG, tables=[*CONFIG.tables, TableSpec("T99", 10)])
         assert bigger.largest_table_capacity() == 10
 

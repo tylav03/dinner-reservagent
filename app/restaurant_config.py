@@ -53,11 +53,18 @@ class RestaurantConfig:
     def is_within_hours(self, start: datetime) -> bool:
         """True if a booking that *starts* at `start` also *ends* (start +
         turn_time) inside the same opening window. A 7:00pm booking with a 90m
-        turn time is invalid if the kitchen closes at 8:00pm."""
-        end = (start + self.turn_time).time()
-        s = start.time()
+        turn time is invalid if the kitchen closes at 8:00pm.
+
+        Compares full datetimes, not bare `time()` values: a turn that crosses
+        midnight (e.g. Sat 22:30 + 90m -> Sun 00:00) must not compare its
+        wrapped end time against the same day's close as if nothing happened —
+        `00:00 <= 23:00` is true, which would wrongly accept it.
+        """
+        end = start + self.turn_time
         for open_t, close_t in self.windows_for(start.date()):
-            if s >= open_t and end <= close_t:
+            open_dt = datetime.combine(start.date(), open_t)
+            close_dt = datetime.combine(start.date(), close_t)
+            if start >= open_dt and end <= close_dt:
                 return True
         return False
 
