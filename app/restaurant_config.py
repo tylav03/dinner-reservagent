@@ -106,7 +106,7 @@ CONFIG = RestaurantConfig(
         TableSpec("T1", 2), TableSpec("T2", 2), TableSpec("T3", 2), TableSpec("T4", 2),
         TableSpec("T5", 4), TableSpec("T6", 4), TableSpec("T7", 4), TableSpec("T8", 4),
         TableSpec("T9", 4), TableSpec("T10", 4),
-        TableSpec("T11", 6), TableSpec("T12", 6),
+        TableSpec("T11", 6), TableSpec("T12", 8),
         TableSpec("T13", 6, section="patio"), TableSpec("T14", 6, section="patio"),
     ],
 )
