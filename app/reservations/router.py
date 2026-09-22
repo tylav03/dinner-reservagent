@@ -27,7 +27,7 @@ from app.reservations.schemas import (
     RestaurantConfigOut,
     TableOut,
 )
-from app.restaurant_config import CONFIG, now_local
+from app.restaurant_config import CONFIG
 
 router = APIRouter(prefix="/api", tags=["reservations"])
 
@@ -156,21 +156,11 @@ def patch_reservation(
     code: str, body: PatchReservationIn, session: Session = Depends(get_session)
 ) -> ReservationOut:
     try:
-        r = service.get_by_code(session, code)
+        r = service.update_reservation(session, code, status=body.status, notes=body.notes)
     except service.ReservationNotFound as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "reservation not found") from e
-
-    allowed = {"booked", "seated", "completed", "cancelled", "no_show"}
-    if body.status is not None:
-        if body.status not in allowed:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "bad status")
-        r.status = body.status
-    if body.notes is not None:
-        r.notes = body.notes
-    r.updated_at = now_local()
-    session.add(r)
-    session.commit()
-    session.refresh(r)
+    except service.InvalidStatus as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "bad status") from e
     return ReservationOut.of(r)
 
 

@@ -39,6 +39,9 @@ from app.models import (
     SOURCE_MANUAL,
     STATUS_BOOKED,
     STATUS_CANCELLED,
+    STATUS_COMPLETED,
+    STATUS_NO_SHOW,
+    STATUS_SEATED,
     Reservation,
 )
 from app.reservations.availability import (
@@ -69,6 +72,10 @@ class NoAvailability(Exception):
 
 class ReservationNotFound(Exception):
     pass
+
+
+class InvalidStatus(Exception):
+    """Raised by update_reservation for a status outside the allowed set."""
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +353,39 @@ def cancel_reservation(session: Session, confirmation_code: str) -> Reservation:
     row = get_by_code(session, confirmation_code)
     if row.status != STATUS_CANCELLED:
         row.status = STATUS_CANCELLED
+        row.updated_at = now_local()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+    return row
+
+
+_VALID_STATUSES = {STATUS_BOOKED, STATUS_SEATED, STATUS_COMPLETED, STATUS_CANCELLED, STATUS_NO_SHOW}
+
+
+def update_reservation(
+    session: Session, confirmation_code: str, *,
+    status: str | None = None, notes: str | None = None,
+) -> Reservation:
+    """Patch a reservation's status and/or notes. Raises ReservationNotFound for
+    a bad code, InvalidStatus for a status outside the allowed set. Like
+    cancel_reservation, only writes (and bumps updated_at) if something actually
+    changed — a no-op PATCH is a no-op write.
+    """
+    row = get_by_code(session, confirmation_code)
+
+    if status is not None and status not in _VALID_STATUSES:
+        raise InvalidStatus(status)
+
+    changed = False
+    if status is not None and status != row.status:
+        row.status = status
+        changed = True
+    if notes is not None and notes != row.notes:
+        row.notes = notes
+        changed = True
+
+    if changed:
         row.updated_at = now_local()
         session.add(row)
         session.commit()
