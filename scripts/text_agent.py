@@ -8,6 +8,7 @@ and Phase 5 adds a phone number.
 Each run is one "call": a single DB session for the whole conversation, and
 one idempotency key (stands in for what will be the Twilio Call SID from
 Phase 5 onward) so a retried create_reservation tool call can't double-book.
+The agent speaks first, same as answering a real phone call would.
 
 Type 'quit' / 'exit' / Ctrl-D to hang up.
 """
@@ -23,11 +24,51 @@ from app.db import session_scope
 from app.voice.prompts import build_system_prompt
 from app.voice.tools import TOOL_SCHEMAS, call_tool
 
-MAX_TOOL_ROUNDS = 5  # per user turn — a safety valve against a runaway tool-call loop
+MAX_TOOL_ROUNDS = 5  # per turn — a safety valve against a runaway tool-call loop
 
 
 def _print_tool_call(name: str, args: dict, result: dict) -> None:
     print(f"  \033[2m[tool] {name}({json.dumps(args)}) -> {json.dumps(result)}\033[0m")
+
+
+def _run_agent_turn(client, session, settings, messages: list[dict], call_id: str) -> None:
+    """Get the agent's next turn, resolving any tool calls along the way, and
+    print/append its final spoken response. Used both for the opening greeting
+    (no user message yet) and for every reply after that — same logic either
+    way, so the greeting gets exactly the same tool-calling behavior as the
+    rest of the conversation.
+    """
+    for _ in range(MAX_TOOL_ROUNDS):
+        response = client.chat.completions.create(
+            model=settings.openai_model,
+            messages=messages,
+            tools=TOOL_SCHEMAS,
+        )
+        msg = response.choices[0].message
+
+        if not msg.tool_calls:
+            messages.append({"role": "assistant", "content": msg.content})
+            print(f"Agent: {msg.content}\n")
+            return
+
+        messages.append({
+            "role": "assistant",
+            "content": msg.content,
+            "tool_calls": [tc.model_dump() for tc in msg.tool_calls],
+        })
+        for tc in msg.tool_calls:
+            args = json.loads(tc.function.arguments or "{}")
+            if tc.function.name == "create_reservation":
+                args.setdefault("idempotency_key", call_id)
+            result = call_tool(session, tc.function.name, args)
+            _print_tool_call(tc.function.name, args, result)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": json.dumps(result),
+            })
+
+    print("Agent: [gave up after too many tool calls in one turn — something's looping]\n")
 
 
 def main() -> None:
@@ -51,10 +92,12 @@ def main() -> None:
     call_id = str(uuid.uuid4())  # this call's idempotency key
     messages: list[dict] = [{"role": "system", "content": build_system_prompt()}]
 
-    print(f"Connected as a caller. Model: {settings.openai_model}. "
-          f"Type 'quit' to hang up.\n")
+    print(f"Connected. Model: {settings.openai_model}. Type 'quit' to hang up.\n")
 
     with session_scope() as session:
+        # The agent answers the call — it speaks first, before any user input.
+        _run_agent_turn(client, session, settings, messages, call_id)
+
         while True:
             try:
                 user_text = input("You: ").strip()
@@ -68,39 +111,7 @@ def main() -> None:
                 continue
 
             messages.append({"role": "user", "content": user_text})
-
-            for _ in range(MAX_TOOL_ROUNDS):
-                response = client.chat.completions.create(
-                    model=settings.openai_model,
-                    messages=messages,
-                    tools=TOOL_SCHEMAS,
-                )
-                msg = response.choices[0].message
-
-                if not msg.tool_calls:
-                    messages.append({"role": "assistant", "content": msg.content})
-                    print(f"Agent: {msg.content}\n")
-                    break
-
-                messages.append({
-                    "role": "assistant",
-                    "content": msg.content,
-                    "tool_calls": [tc.model_dump() for tc in msg.tool_calls],
-                })
-                for tc in msg.tool_calls:
-                    args = json.loads(tc.function.arguments or "{}")
-                    if tc.function.name == "create_reservation":
-                        args.setdefault("idempotency_key", call_id)
-                    result = call_tool(session, tc.function.name, args)
-                    _print_tool_call(tc.function.name, args, result)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": json.dumps(result),
-                    })
-            else:
-                print("Agent: [gave up after too many tool calls in one turn — "
-                      "something's looping]\n")
+            _run_agent_turn(client, session, settings, messages, call_id)
 
 
 if __name__ == "__main__":
