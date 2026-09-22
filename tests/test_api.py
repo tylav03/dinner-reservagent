@@ -83,6 +83,37 @@ def test_cancel_endpoint(client):
     assert deleted.json()["status"] == "cancelled"
 
 
+def test_patch_endpoint_updates_status_and_notes(client):
+    created = client.post("/api/reservations", json={
+        "guest_name": "Dorothy Vaughan", "phone": "+15550188", "party_size": 3,
+        "when": _friday_7pm_iso(),
+    }).json()
+    code = created["confirmation_code"]
+
+    patched = client.patch(f"/api/reservations/{code}", json={
+        "status": "seated", "notes": "arrived early",
+    })
+    assert patched.status_code == 200, patched.text
+    body = patched.json()
+    assert body["status"] == "seated"
+    assert body["notes"] == "arrived early"
+
+
+def test_patch_endpoint_rejects_bad_status(client):
+    created = client.post("/api/reservations", json={
+        "guest_name": "Annie Easley", "phone": "+15550177", "party_size": 2,
+        "when": _friday_7pm_iso(),
+    }).json()
+    res = client.patch(f"/api/reservations/{created['confirmation_code']}",
+                       json={"status": "enroute"})
+    assert res.status_code == 422
+
+
+def test_patch_endpoint_unknown_code_is_404(client):
+    res = client.patch("/api/reservations/NOPE99", json={"status": "seated"})
+    assert res.status_code == 404
+
+
 def test_source_defaults_to_manual_and_can_be_overridden(client):
     base = {"guest_name": "Src Test", "phone": "+15550001", "party_size": 2}
     d = _friday_7pm_iso()

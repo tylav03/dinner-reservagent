@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.models import STATUS_BOOKED, STATUS_CANCELLED
+from app.models import STATUS_BOOKED, STATUS_CANCELLED, STATUS_SEATED
 from app.reservations import service
 from app.restaurant_config import CONFIG
 
@@ -88,6 +88,51 @@ def test_cancel_frees_the_table(session):
     reuse = service.create_reservation(session, guest_name="reuse", phone="y",
                                        party_size=2, when=when)
     assert reuse.table_id == made[0].table_id
+
+
+def test_update_reservation_changes_status_and_notes(session):
+    r = service.create_reservation(session, guest_name="Grace Hopper", phone="1",
+                                   party_size=2, when=_friday_7pm())
+    # Capture before mutating — `session` uses SQLAlchemy's identity map, so
+    # `r` and the object `update_reservation` returns are the *same* Python
+    # object for this PK; comparing r.updated_at after the call would just be
+    # comparing the mutated value to itself.
+    before = r.updated_at
+    updated = service.update_reservation(session, r.confirmation_code,
+                                         status=STATUS_SEATED, notes="by the window")
+    assert updated.status == STATUS_SEATED
+    assert updated.notes == "by the window"
+    assert updated.updated_at > before
+
+
+def test_update_reservation_rejects_bad_status(session):
+    r = service.create_reservation(session, guest_name="Alan Turing", phone="2",
+                                   party_size=2, when=_friday_7pm())
+    with pytest.raises(service.InvalidStatus):
+        service.update_reservation(session, r.confirmation_code, status="enroute")
+
+
+def test_update_reservation_unknown_code_raises(session):
+    with pytest.raises(service.ReservationNotFound):
+        service.update_reservation(session, "NOPE99", status=STATUS_SEATED)
+
+
+def test_update_reservation_noop_does_not_touch_updated_at(session):
+    # Same pattern as cancel_reservation: a PATCH that changes nothing is a
+    # no-op write, not just a no-op result. Capture the timestamp before
+    # mutating — `r` and update_reservation's return share the same identity
+    # (one SQLAlchemy session), so comparing against r.updated_at afterward
+    # would just compare the value to itself.
+    r = service.create_reservation(session, guest_name="Katherine Johnson", phone="3",
+                                   party_size=2, when=_friday_7pm())
+    before = r.updated_at
+
+    unchanged = service.update_reservation(session, r.confirmation_code,
+                                           status=r.status, notes=r.notes)
+    assert unchanged.updated_at == before
+
+    still_unchanged = service.update_reservation(session, r.confirmation_code)
+    assert still_unchanged.updated_at == before
 
 
 def test_past_time_rejected(session):
