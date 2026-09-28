@@ -6,8 +6,7 @@ it never double-books. This repo is the reservation system the agent (and a
 staff-facing dashboard) both run on.
 
 **Status: in active development.** The reservation backend and the staff
-dashboard are built and working end to end. The voice agent itself (phone
-call → LLM → booking) is the next phase — see [Roadmap](#roadmap).
+dashboard are built and working end to end. The agent is built out using a text interface, the voice interface will come next once the agent has passed the necessary testing — see [Roadmap](#roadmap).
 
 ## What's here today
 
@@ -19,6 +18,7 @@ call → LLM → booking) is the next phase — see [Roadmap](#roadmap).
   list with history, a floor-plan timeline view, and a booking form built
   around an availability-first "openings strip" so a host sees what's actually
   bookable before they try.
+- **A text-based agent interface** (Python/OpenAI API): a python script text_agent.py that allows a user to interact with the agent to check and book a reservation. This will be used to test the agents system prompt and tool calling to ensure the agent functions correctly before moving to the phone implementation.
 - **50 passing tests** covering the availability engine, the transactional
   layer (including a real concurrency test), and the HTTP API.
 
@@ -29,11 +29,11 @@ call → LLM → booking) is the next phase — see [Roadmap](#roadmap).
                                                         │ tool calls
                                                         ▼
                                           ┌─────────────────────────┐
-                                          │   FastAPI backend        │
-                                          │   (this repo, app/)      │
-                                          │                          │
- Staff dashboard  ───────HTTP───────────▶│  availability engine  ───┼──▶ PostgreSQL
- (frontend/)                             │  booking service         │
+                                          │   FastAPI backend       │
+                                          │   (this repo, app/)     │
+                                          │                         │
+ Staff dashboard  ───────HTTP───────────▶ │  availability engine  ──┼──▶ PostgreSQL
+ (frontend/)                              │  booking service        │
                                           └─────────────────────────┘
 ```
 
