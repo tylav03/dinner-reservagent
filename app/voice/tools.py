@@ -147,8 +147,21 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "name": "check_availability",
             "description": (
                 "Check whether a table is free for a given date, time, and party "
-                "size before promising anything to the caller. Always call this "
-                "before create_reservation."
+                "size. Call this for ANY date/time the caller proposes, even one "
+                "that looks obviously outside hours or too late to seat — never "
+                "decide that yourself from the hours you were told; this tool is "
+                "the only source of truth, since it also accounts for needing a "
+                "full turn-time before close. If available is false, `reason` "
+                "tells you why, and you must describe that reason accurately, not "
+                "paraphrase it as something else: 'closed' means the restaurant is "
+                "closed then, or it's too close to closing to seat a full turn "
+                "(say something like \"we're closed then\" or \"we close too soon "
+                "after that\" — never 'fully booked'); 'full' means we're open but "
+                "every table is taken at that time (this is the only case where "
+                "'fully booked' is the right thing to say); 'past' means that time "
+                "has already gone by; 'beyond_horizon' means it's further ahead "
+                "than we take bookings; 'party_too_large' means bigger than we can "
+                "seat online. Always call this before create_reservation."
             ),
             "parameters": {
                 "type": "object",
@@ -174,7 +187,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "guest_name": {"type": "string"},
-                    "phone": {"type": "string", "description": "callback number"},
+                    "phone": {"type": "string", "description": "phone number for the reservation"},
                     "party_size": {"type": "integer", "minimum": 1},
                     "date": {"type": "string", "description": "ISO date, YYYY-MM-DD"},
                     "time": {"type": "string", "description": "24-hour time, HH:MM"},
