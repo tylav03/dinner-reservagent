@@ -6,9 +6,7 @@ it never double-books. This repo is the reservation system the agent (and a
 staff-facing dashboard) both run on.
 
 **Status: in active development.** The reservation backend and the staff
-dashboard are built and working end to end. The agent's conversation and
-tool-calling logic is also built and working, tested so far as text (a
-terminal chat, not a phone call yet) — see [Roadmap](#roadmap).
+dashboard are built and working end to end. The agent is built out using a text interface, the voice interface will come next once the agent has passed the necessary testing — see [Roadmap](#roadmap).
 
 ## What's here today
 
@@ -20,15 +18,9 @@ terminal chat, not a phone call yet) — see [Roadmap](#roadmap).
   list with history, a floor-plan timeline view, and a booking form built
   around an availability-first "openings strip" so a host sees what's actually
   bookable before they try.
-- **An AI agent** (`app/voice/`) with four tools (check availability, book,
-  look up, cancel) that call the service layer directly — never the REST
-  API — plus a system prompt built dynamically from the restaurant config so
-  it can't drift out of sync with what the availability engine enforces. Runs
-  today as a terminal chat (`scripts/text_agent.py`) against OpenAI's Chat
-  Completions API; audio and a phone number come next.
-- **76 passing tests** covering the availability engine, the transactional
-  layer (including a real concurrency test), the HTTP API, and the agent's
-  tool handlers.
+- **A text-based agent interface** (Python/OpenAI API): a python script text_agent.py that allows a user to interact with the agent to check and book a reservation. This will be used to test the agents system prompt and tool calling to ensure the agent functions correctly before moving to the phone implementation.
+- **50 passing tests** covering the availability engine, the transactional
+  layer (including a real concurrency test), and the HTTP API.
 
 ## Architecture
 
@@ -37,11 +29,11 @@ terminal chat, not a phone call yet) — see [Roadmap](#roadmap).
                                                         │ tool calls
                                                         ▼
                                           ┌─────────────────────────┐
-                                          │   FastAPI backend        │
-                                          │   (this repo, app/)      │
-                                          │                          │
- Staff dashboard  ───────HTTP───────────▶│  availability engine  ───┼──▶ PostgreSQL
- (frontend/)                             │  booking service         │
+                                          │   FastAPI backend       │
+                                          │   (this repo, app/)     │
+                                          │                         │
+ Staff dashboard  ───────HTTP───────────▶ │  availability engine  ──┼──▶ PostgreSQL
+ (frontend/)                              │  booking service        │
                                           └─────────────────────────┘
 ```
 
