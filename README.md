@@ -80,13 +80,6 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
-> **Bring up `db` before `alembic upgrade head`, not the whole stack.** The API
-> container creates tables itself on startup as a local-dev convenience
-> (`app/main.py`'s lifespan), with no `alembic_version` bookkeeping. If it's
-> already running when you run the migration, Alembic tries to create tables
-> that already exist and fails with `DuplicateTable`. Migrate against a bare
-> Postgres first, then start the API.
-
 > **Port 5433, not 5432:** the Postgres container is deliberately published on
 > `5433` so it doesn't collide with a Postgres already running on your machine
 > on the default port. Inside Docker's network other containers still reach it
