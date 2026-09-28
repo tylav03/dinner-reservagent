@@ -48,7 +48,8 @@ front desk are checked, and can conflict with, each other identically.
 | Backend | Python, FastAPI, SQLModel, Alembic |
 | Database | PostgreSQL |
 | Frontend | React, TypeScript, Vite, Tailwind CSS v4 |
-| Voice (planned) | Twilio, [Pipecat](https://github.com/pipecat-ai/pipecat), OpenAI Realtime API |
+| Agent | OpenAI Chat Completions + function calling (text-mode today) |
+| Voice (planned) | Twilio, [Pipecat](https://github.com/pipecat-ai/pipecat), OpenAI Realtime API (replaces Chat Completions once audio is in the picture) |
 | Dev environment | Docker Compose |
 
 ## Getting started
@@ -60,14 +61,17 @@ git clone https://github.com/tylav03/dinner-reservagent.git
 cd dinner-reservagent
 cp .env.example .env
 
-# Postgres (:5433 on the host — see note below) + the API (:8000)
-docker compose up -d
+# Postgres only, first (:5433 on the host — see note below)
+docker compose up -d db
 
 # apply migrations and load sample data
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 alembic upgrade head
 python -m scripts.seed
+
+# now bring up the API too (:8000)
+docker compose up -d
 
 # frontend, in a second terminal
 cd frontend
@@ -76,16 +80,34 @@ npm install
 npm run dev   # http://localhost:5173
 ```
 
+> **Bring up `db` before `alembic upgrade head`, not the whole stack.** The API
+> container creates tables itself on startup as a local-dev convenience
+> (`app/main.py`'s lifespan), with no `alembic_version` bookkeeping. If it's
+> already running when you run the migration, Alembic tries to create tables
+> that already exist and fails with `DuplicateTable`. Migrate against a bare
+> Postgres first, then start the API.
+
 > **Port 5433, not 5432:** the Postgres container is deliberately published on
 > `5433` so it doesn't collide with a Postgres already running on your machine
 > on the default port. Inside Docker's network other containers still reach it
 > as `db:5432`.
 
+### Talking to the agent
+
+```bash
+# add OPENAI_API_KEY to .env first — get one at platform.openai.com/api-keys
+python -m scripts.text_agent
+```
+
+A terminal chat with the same agent that will eventually answer the phone —
+same tools, same system prompt, same database. It speaks first, same as
+answering a real call would.
+
 ## Testing
 
 ```bash
 docker compose up -d db
-pytest                       # 50 tests: engine, service/concurrency, API
+pytest                       # 76 tests: engine, service/concurrency, API, agent tools
 
 cd frontend
 npx tsc -b && npm run build  # typecheck + production build
@@ -98,11 +120,14 @@ app/
 ├── main.py                    FastAPI app
 ├── models.py                  SQLModel tables
 ├── restaurant_config.py       venue config: hours, tables, turn time, timezone
-└── reservations/
-    ├── availability.py        pure conflict/availability engine (no DB)
-    ├── service.py              transactional booking, concurrency guard
-    ├── router.py                REST endpoints
-    └── schemas.py                request/response models
+├── reservations/
+│   ├── availability.py        pure conflict/availability engine (no DB)
+│   ├── service.py              transactional booking, concurrency guard
+│   ├── router.py                REST endpoints
+│   └── schemas.py                request/response models
+└── voice/
+    ├── tools.py                agent tools — call service.py directly, never HTTP
+    └── prompts.py                system prompt, built from restaurant_config
 frontend/src/
 ├── App.tsx                    date-scoped viewer shell
 ├── components/
@@ -111,9 +136,11 @@ frontend/src/
 │   ├── NewReservationForm.tsx booking form
 │   ├── OpeningsStrip.tsx      availability heatmap
 │   └── Toast.tsx              confirmation toasts
-└── hooks.ts / api.ts / lib/    data fetching + helpers
+└── hooks.ts / api.ts / lib/    data fetching + helpers (incl. phone.ts input mask)
 tests/                         pytest suite
-scripts/seed.py                rolling demo data (recent past → next week)
+scripts/
+├── seed.py                    rolling demo data (recent past → next week)
+└── text_agent.py                terminal chat with the agent
 alembic/                       schema migrations
 ```
 
@@ -123,7 +150,7 @@ alembic/                       schema migrations
       booking, REST API, migrations
 - [x] **Phase 2** — staff dashboard: reservation viewer, floor plan, booking
       form, availability strip
-- [ ] **Phase 3** — text-mode agent: tool-calling logic against this API,
+- [x] **Phase 3** — text-mode agent: tool-calling logic against this API,
       driven from a terminal chat (no audio yet)
 - [ ] **Phase 4** — local voice loop: browser mic ↔ OpenAI Realtime API
 - [ ] **Phase 5** — telephony: Twilio number + Media Streams, call recording

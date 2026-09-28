@@ -26,6 +26,11 @@ class Settings(BaseSettings):
 
     # Secrets that later phases need; unused in Phase 1.
     openai_api_key: str = ""
+    # Cheap, tool-calling-capable model for Phase 3's text-mode agent. Phase 4+
+    # switches to the Realtime API for actual speech; this is plain Chat
+    # Completions. Override in .env if OpenAI has shipped something newer/
+    # cheaper by the time you're running this.
+    openai_model: str = "gpt-4o-mini"
     twilio_auth_token: str = ""
     public_host: str = ""
 

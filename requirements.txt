@@ -13,3 +13,6 @@ pydantic-settings==2.7.0  # load settings from environment / .env
 # --- Domain helpers ---
 python-dateutil==2.9.0.post0   # robust date math
 dateparser==1.2.0              # parse "next Friday", "tonight" -> datetime
+
+# --- Agent (Phase 3+) ---
+openai==1.59.6                 # Chat Completions (Phase 3) + Realtime API (Phase 4+)
