@@ -105,6 +105,30 @@ class TestLookupReservation:
         assert out["found"] is False
         assert "error" in out
 
+    def test_phone_lookup_does_not_surface_past_reservations(self, session):
+        # Regression: a caller asking "what's my reservation" got told about
+        # every booking ever made under their number, including ones from
+        # weeks ago that already happened — find_by_phone had no time filter.
+        from app.models import STATUS_BOOKED, Reservation
+
+        past_when = datetime.now() - timedelta(days=5)
+        session.add(Reservation(
+            confirmation_code="OLDONE", guest_name="Old Booking", phone="+15550177",
+            party_size=2, start_at=past_when, end_at=past_when + timedelta(minutes=90),
+            table_id="T2", status=STATUS_BOOKED,
+        ))
+        session.commit()
+
+        d, t = _ymd_hm(_friday())
+        tools.create_reservation(session, guest_name="Old Booking", phone="+15550177",
+                                 party_size=2, date=d, time=t)
+
+        out = tools.lookup_reservation(session, phone="+15550177")
+        assert out["found"] is True
+        codes = [r["confirmation_code"] for r in out["reservations"]]
+        assert "OLDONE" not in codes
+        assert len(codes) == 1
+
 
 class TestCancelReservation:
     def test_cancels(self, session):

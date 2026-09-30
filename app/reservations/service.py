@@ -239,12 +239,20 @@ def get_by_code(session: Session, confirmation_code: str) -> Reservation:
     return row
 
 
-def find_by_phone(session: Session, phone: str) -> list[Reservation]:
-    return list(session.exec(
-        select(Reservation)
-        .where(Reservation.phone == phone, Reservation.status == STATUS_BOOKED)
-        .order_by(Reservation.start_at)
-    ).all())
+def find_by_phone(session: Session, phone: str, *, upcoming_only: bool = True,
+                  now: datetime | None = None) -> list[Reservation]:
+    """Booked reservations for a phone number. Defaults to upcoming only (the
+    turn hasn't ended yet): a caller asking "what's my reservation" means
+    what's coming up, not their entire booking history — this had no time
+    filter at all before, so it returned every booking ever made under that
+    number, including ones from weeks ago that already happened."""
+    now = now or now_local()
+    stmt = select(Reservation).where(
+        Reservation.phone == phone, Reservation.status == STATUS_BOOKED,
+    )
+    if upcoming_only:
+        stmt = stmt.where(Reservation.end_at > now)
+    return list(session.exec(stmt.order_by(Reservation.start_at)).all())
 
 
 def list_reservations(session: Session, *, day: date | None = None,

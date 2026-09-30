@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.models import STATUS_BOOKED, STATUS_CANCELLED, STATUS_SEATED
+from app.models import STATUS_BOOKED, STATUS_CANCELLED, STATUS_SEATED, Reservation
 from app.reservations import service
 from app.restaurant_config import CONFIG
 
@@ -88,6 +88,34 @@ def test_cancel_frees_the_table(session):
     reuse = service.create_reservation(session, guest_name="reuse", phone="y",
                                        party_size=2, when=when)
     assert reuse.table_id == made[0].table_id
+
+
+def test_find_by_phone_excludes_past_by_default(session):
+    # create_reservation refuses a past time, so insert the "already happened"
+    # one directly — same as scripts/seed.py does for history demo data.
+    past_when = datetime.now() - timedelta(days=3)
+    session.add(Reservation(
+        confirmation_code="PASTX1", guest_name="Past Guest", phone="+15550999",
+        party_size=2, start_at=past_when, end_at=past_when + CONFIG.turn_time,
+        table_id="T1", status=STATUS_BOOKED,
+    ))
+    session.commit()
+
+    upcoming = service.create_reservation(session, guest_name="Future Guest", phone="+15550999",
+                                          party_size=2, when=_friday_7pm())
+
+    found = service.find_by_phone(session, "+15550999")
+    assert [r.confirmation_code for r in found] == [upcoming.confirmation_code]
+
+    found_all = service.find_by_phone(session, "+15550999", upcoming_only=False)
+    assert {r.confirmation_code for r in found_all} == {upcoming.confirmation_code, "PASTX1"}
+
+
+def test_find_by_phone_excludes_cancelled(session):
+    made = service.create_reservation(session, guest_name="Cancels", phone="+15550998",
+                                      party_size=2, when=_friday_7pm())
+    service.cancel_reservation(session, made.confirmation_code)
+    assert service.find_by_phone(session, "+15550998") == []
 
 
 def test_update_reservation_changes_status_and_notes(session):
