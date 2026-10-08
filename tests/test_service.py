@@ -92,22 +92,25 @@ def test_cancel_frees_the_table(session):
 
 def test_find_by_phone_excludes_past_by_default(session):
     # create_reservation refuses a past time, so insert the "already happened"
-    # one directly — same as scripts/seed.py does for history demo data.
+    # one directly — same as scripts/seed.py does for history demo data. Store
+    # it in the same normalized shape create_reservation would have produced,
+    # same as a real historical row would be.
+    phone = service.normalize_phone("+15550999")
     past_when = datetime.now() - timedelta(days=3)
     session.add(Reservation(
-        confirmation_code="PASTX1", guest_name="Past Guest", phone="+15550999",
+        confirmation_code="PASTX1", guest_name="Past Guest", phone=phone,
         party_size=2, start_at=past_when, end_at=past_when + CONFIG.turn_time,
         table_id="T1", status=STATUS_BOOKED,
     ))
     session.commit()
 
-    upcoming = service.create_reservation(session, guest_name="Future Guest", phone="+15550999",
+    upcoming = service.create_reservation(session, guest_name="Future Guest", phone=phone,
                                           party_size=2, when=_friday_7pm())
 
-    found = service.find_by_phone(session, "+15550999")
+    found = service.find_by_phone(session, phone)
     assert [r.confirmation_code for r in found] == [upcoming.confirmation_code]
 
-    found_all = service.find_by_phone(session, "+15550999", upcoming_only=False)
+    found_all = service.find_by_phone(session, phone, upcoming_only=False)
     assert {r.confirmation_code for r in found_all} == {upcoming.confirmation_code, "PASTX1"}
 
 
@@ -116,6 +119,31 @@ def test_find_by_phone_excludes_cancelled(session):
                                       party_size=2, when=_friday_7pm())
     service.cancel_reservation(session, made.confirmation_code)
     assert service.find_by_phone(session, "+15550998") == []
+
+
+class TestPhoneNormalization:
+    """Regression: a reservation made via the dashboard (masked input, stores
+    "(203) 906-8096") was invisible to a phone lookup where the caller just
+    read off raw digits ("2039068096") — same number, two different strings,
+    no match on an exact comparison. normalize_phone() is applied at both
+    write and read time so any input shape resolves to the same stored value.
+    """
+
+    def test_create_reservation_normalizes_to_canonical_format(self, session):
+        r = service.create_reservation(session, guest_name="Raw Digits", phone="2039068096",
+                                       party_size=2, when=_friday_7pm())
+        assert r.phone == "(203) 906-8096"
+
+    def test_find_by_phone_matches_regardless_of_caller_input_format(self, session):
+        # Booked "on the web app" — arrives already masked.
+        service.create_reservation(session, guest_name="Web Booking", phone="(203) 906-8096",
+                                   party_size=2, when=_friday_7pm())
+
+        for spoken in ["2039068096", "203-906-8096", "203.906.8096", "1-203-906-8096",
+                      "(203) 906-8096"]:
+            found = service.find_by_phone(session, spoken)
+            assert len(found) == 1, f"no match for caller input {spoken!r}"
+            assert found[0].guest_name == "Web Booking"
 
 
 def test_update_reservation_changes_status_and_notes(session):

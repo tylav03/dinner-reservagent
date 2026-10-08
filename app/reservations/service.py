@@ -27,6 +27,7 @@ asserts exactly one wins.
 
 from __future__ import annotations
 
+import re
 import secrets
 import zlib
 from datetime import date, datetime, timedelta
@@ -239,6 +240,29 @@ def get_by_code(session: Session, confirmation_code: str) -> Reservation:
     return row
 
 
+def normalize_phone(raw: str) -> str:
+    """Canonical phone representation: "(XXX) XXX-XXXX" for a 10-digit US
+    number (an 11-digit number with a leading "1" is treated the same way).
+    Anything else is reduced to digits-only, or left as-is if it has no
+    digits at all.
+
+    Applied both when a reservation is created and when one is searched for
+    by phone, so a booking made via the dashboard's masked input — always
+    already in this format — and a caller reading raw digits over the phone
+    resolve to the same string. Without this, `"2039068096"` (what a caller
+    says) and `"(203) 906-8096"` (what the dashboard stores) are two
+    different strings that never match on an exact lookup, even though
+    they're the same number. Scoped to US numbers, matching the single
+    hard-coded restaurant this demo models.
+    """
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 11 and digits[0] == "1":
+        digits = digits[1:]
+    if len(digits) == 10:
+        return f"({digits[0:3]}) {digits[3:6]}-{digits[6:10]}"
+    return digits or raw.strip()
+
+
 def find_by_phone(session: Session, phone: str, *, upcoming_only: bool = True,
                   now: datetime | None = None) -> list[Reservation]:
     """Booked reservations for a phone number. Defaults to upcoming only (the
@@ -248,7 +272,7 @@ def find_by_phone(session: Session, phone: str, *, upcoming_only: bool = True,
     number, including ones from weeks ago that already happened."""
     now = now or now_local()
     stmt = select(Reservation).where(
-        Reservation.phone == phone, Reservation.status == STATUS_BOOKED,
+        Reservation.phone == normalize_phone(phone), Reservation.status == STATUS_BOOKED,
     )
     if upcoming_only:
         stmt = stmt.where(Reservation.end_at > now)
@@ -329,7 +353,7 @@ def create_reservation(
     reservation = Reservation(
         confirmation_code=_generate_code(session),
         guest_name=guest_name.strip(),
-        phone=phone.strip(),
+        phone=normalize_phone(phone),
         party_size=party_size,
         start_at=when,
         end_at=when + config.turn_time,

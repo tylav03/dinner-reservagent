@@ -92,6 +92,24 @@ class TestLookupReservation:
         out = tools.lookup_reservation(session, confirmation_code="NOPE99")
         assert out["found"] is False
 
+    def test_phone_shaped_confirmation_code_is_redirected_to_phone_lookup(self, session):
+        # Regression: the model put a spoken phone number in the
+        # confirmation_code argument (both are "a short string the caller
+        # said") and got a clean, correct-looking-but-wrong "not found".
+        d, t = _ymd_hm(_friday())
+        tools.create_reservation(session, guest_name="Redirect Test", phone="2039068096",
+                                 party_size=2, date=d, time=t)
+        out = tools.lookup_reservation(session, confirmation_code="2039068096")
+        assert out["found"] is True
+        assert out["reservations"][0]["guest_name"] == "Redirect Test"
+
+    def test_six_digit_code_is_not_redirected(self, session):
+        # A genuine 6-character code that happens to be all digits (our
+        # alphabet allows 2-9) must NOT be misread as a phone number.
+        out = tools.lookup_reservation(session, confirmation_code="234567")
+        assert out["found"] is False
+        assert "reservations" not in out  # took the code path, not the phone path
+
     def test_found_by_phone(self, session):
         d, t = _ymd_hm(_friday())
         tools.create_reservation(session, guest_name="Katherine Johnson", phone="+15550122",

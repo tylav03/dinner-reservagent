@@ -103,6 +103,16 @@ def lookup_reservation(
     session: Session, *, confirmation_code: str | None = None,
     phone: str | None = None,
 ) -> dict[str, Any]:
+    # A model occasionally puts a phone number in confirmation_code — both are
+    # just "a short string the caller said." Confirmation codes are always
+    # exactly 6 characters; a longer string, or one with 7+ digits, is almost
+    # certainly a phone number instead. Redirect rather than reporting "not
+    # found" for a lookup that was never going to match anything.
+    if confirmation_code and not phone:
+        digit_count = sum(c.isdigit() for c in confirmation_code)
+        if len(confirmation_code.strip()) != 6 or digit_count >= 7:
+            phone, confirmation_code = confirmation_code, None
+
     if confirmation_code:
         try:
             r = service.get_by_code(session, confirmation_code)
@@ -201,12 +211,24 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "lookup_reservation",
-            "description": "Find an existing reservation by its confirmation code or the caller's phone number.",
+            "description": (
+                "Find an existing reservation by its confirmation code or the "
+                "caller's phone number. If what the caller gives you is a phone "
+                "number, pass it as `phone`, not `confirmation_code` — "
+                "confirmation codes are always exactly 6 letters/digits (e.g. "
+                "'A2UK6H'), never a 10-digit phone number."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "confirmation_code": {"type": "string"},
-                    "phone": {"type": "string"},
+                    "confirmation_code": {
+                        "type": "string",
+                        "description": "Exactly 6 letters/digits, e.g. 'A2UK6H'.",
+                    },
+                    "phone": {
+                        "type": "string",
+                        "description": "The caller's phone number, however they said it.",
+                    },
                 },
             },
         },
